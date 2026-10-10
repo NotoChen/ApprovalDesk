@@ -1,0 +1,110 @@
+name: macOS CI and Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Build and verify ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x86_64
+            runner: macos-15-intel
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - name: Prepare portable Python
+        shell: bash
+        run: |
+          uv python install
+          APPROVALDESK_PYTHON="$(uv python find --managed-python)"
+          echo "APPROVALDESK_PYTHON=$APPROVALDESK_PYTHON" >> "$GITHUB_ENV"
+          "$APPROVALDESK_PYTHON" --version
+          swift --version
+          test "$(uname -m)" = "${{ matrix.arch }}"
+      - name: Check version and release notes
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            "$APPROVALDESK_PYTHON" -B scripts/release_metadata.py --tag "$GITHUB_REF_NAME"
+          else
+            "$APPROVALDESK_PYTHON" -B scripts/release_metadata.py
+          fi
+      - name: Engine tests
+        run: '"$APPROVALDESK_PYTHON" -B -m unittest discover -s Tests/EngineTests -v'
+      - name: Native tests
+        run: swift test -j 2
+      - name: Download pinned components
+        run: '"$APPROVALDESK_PYTHON" -B scripts/prepare_components.py'
+      - name: Build DMG and ZIP
+        run: >-
+          "$APPROVALDESK_PYTHON" -B scripts/build_app.py --configuration release --zip --dmg
+          --components-dir ".cache/build-components/${{ matrix.arch }}"
+      - name: Verify app and both archives
+        run: >-
+          "$APPROVALDESK_PYTHON" -B scripts/check_bundle.py --app dist/审批台.app
+          --arch "${{ matrix.arch }}" --archives-dir dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish versioned installers
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: macos-*
+          path: release-assets
+          merge-multiple: true
+      - name: Assemble release notes and checksums
+        run: >-
+          python3 scripts/release_metadata.py --tag "$GITHUB_REF_NAME" --notes
+          --assets-dir release-assets > release-notes.md
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft > release-state.txt 2>/dev/null; then
+            if [[ "$(cat release-state.txt)" != "true" ]]; then
+              echo "Release $GITHUB_REF_NAME is already published; its installers will not be replaced."
+              exit 1
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+              --title "审批台 $GITHUB_REF_NAME" --notes-file release-notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest --notes-file release-notes.md

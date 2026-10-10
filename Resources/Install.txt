@@ -1,0 +1,14 @@
+审批台 · ApprovalDesk
+
+1. 将「审批台.app」拖入 Applications（应用程序）文件夹。
+2. 打开审批台；默认只显示菜单栏图标，不弹出主面板。
+3. 点击菜单栏图标 → 设置，登录钉钉与 GitLab，选择审批群和人员来源群。
+
+应用已包含 Python、DWS 和 glab，无需另外安装这些组件。
+已有的账号、群聊和策略配置会继续保留。
+
+当前版本使用临时签名，未经过 Apple 公证。首次打开若被 macOS 拦截，
+请在「系统设置 → 隐私与安全性」中选择「仍要打开」，再确认打开审批台。
+
+安装包与更新：
+https://github.com/NotoChen/ApprovalDesk/releases/latest

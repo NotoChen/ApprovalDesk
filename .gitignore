@@ -1,0 +1,24 @@
+.build/
+dist/
+.cache/
+__pycache__/
+*.pyc
+.DS_Store
+.swiftpm/
+release-assets/
+release-notes.md
+release-state.txt
+
+# Local manual validation includes real accounts and avatars; publish demo previews only.
+docs/validation.md
+docs/previews/*
+!docs/previews/workspace-light.png
+!docs/previews/workspace-dark.png
+!docs/previews/icon-family-light.png
+!docs/previews/icon-family-dark.png
+!docs/previews/menubar-light.png
+!docs/previews/menubar-dark.png
+!docs/previews/settings-sources-light.png
+!docs/previews/settings-sources-dark.png
+!docs/previews/settings-execution-light.png
+!docs/previews/settings-execution-dark.png
